@@ -3,7 +3,7 @@
 Reproduction package for **SNAP2**, an LLM-as-optimizer that seeds the SNAP
 search loop with a cheap, no-LLM active-learning pre-pass (EZR). At a fixed
 evaluation budget SNAP2 matches or beats every baseline on validation regret
-(d2h) while issuing **~38% fewer LLM calls** than SNAP.
+(d2h) while using **~30% fewer tokens** (about 38% fewer LLM calls) than SNAP.
 
 On the 105-dataset suite (gpt-oss-120b, 20 repeats), SNAP2 ranks #1 by bestRanks
 (statistically-tied-top-group rate 84.8%) and by mean d2h (0.1740).
@@ -62,6 +62,7 @@ each repeat to `results/status_tracker.json` and skips completed work, so you ca
 stop and re-run `python reproduce.py` at any time. Useful flags:
 
 ```bash
+python reproduce.py --datasets data/misc/auto93.csv --repeats 3   # quick check (one dataset, ~minutes)
 python reproduce.py --repeats 3                      # quick partial pass
 python reproduce.py --datasets data/misc/auto93.csv  # one dataset
 python reproduce.py --skip-benchmark                 # re-run analysis only
@@ -71,7 +72,7 @@ To run a subset by hand, `SNAP` and `OPRO` are interchangeable:
 
 ```bash
 python run_benchmark.py --datasets data/misc/auto93.csv \
-  --strategies LLM SynthCore SNAP SNAP2 --repeats 20
+  --strategies LLM SynthCore SNAP SNAP2 --repeats 20 --seed 12345
 ```
 
 Cost / token / latency table (separate, cache-disabled, 5-dataset profile):
@@ -99,14 +100,4 @@ data/                5 samples + 2 hpo datasets bundled; rest fetched
 
 ```bash
 python methods/tests/test_opro_seed.py   # LLM-free unit test: SNAP2 seed construction
-```
-
-## Citation
-
-```bibtex
-@misc{snap2,
-  title  = {SNAP2: Exploit-Seeded LLM Optimization},
-  author = {TODO},
-  year   = {2026}
-}
 ```

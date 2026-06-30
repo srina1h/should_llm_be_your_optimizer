@@ -2,7 +2,7 @@
 # <!-- vim: set ts=2 sw=2 sts=2 et: -->
 """
     ezr.py : an experiment in easier explainable AI (less is more).    
-    (C) 2024 Tim Menzies (timm@ieee.org) BSD-2 license.    
+    (C) 2024 Anonymous (anonymized for double-blind review) BSD-2 license.
         
     OPTIONS:    
       -a --any     #todo's to explore             = 100   
@@ -34,7 +34,7 @@
 
 from __future__ import annotations 
 
-__author__  = "Tim Menzies"
+__author__  = "Anonymous"
 __version__ = "0.1.0"
 
 import re,ast,sys,math,random,traceback
