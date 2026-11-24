@@ -1,12 +1,3 @@
-"""Meta-prompt builder for OPRO (Yang et al., 2023) — LLM-as-Optimizer."""
-
-
-# Cap vocab listings in the prompt for high-cardinality SYMs (typically numeric
-# columns mis-classified as SYM by ezr when col name starts with a digit, e.g.
-# `2NDFLRSF` or any SYM in a 17K-row dataset). Without this cap the constraints
-# block + schema block can push prompts past gpt-oss-120b's 32K context window.
-# Lenient parser already accepts out-of-vocab values, so truncation is safe —
-# the snap step (dist=1.0 for SYM mismatch) remains correct.
 SYM_VOCAB_DISPLAY_CAP = 30
 
 
@@ -73,9 +64,7 @@ def _format_collisions(data, collisions):
         lines.append(f"- {_format_x_row(data, row)} (d2h={score:.4f})")
     return (
         "Your previous proposals mapped onto these already-evaluated rows. "
-        "Diversify — propose configurations distinct from these:\n"
-        + "\n".join(lines)
-        + "\n"
+        "Diversify — propose configurations distinct from these:\n" + "\n".join(lines) + "\n"
     )
 
 
@@ -163,12 +152,12 @@ def build_opro_prompt(
         "## Instruction",
         f"Propose exactly {k} new feature configurations whose d2h is below {best_so_far:.4f}.",
         "Respond with ONLY a JSON object of this exact shape (no prose, no markdown fences):",
-        '{',
+        "{",
         '  "candidates": [',
         f"    {schema_str},",
         "    ...",
         "  ]",
-        '}',
+        "}",
         f'The "candidates" array MUST have exactly {k} entries.',
     ]
 
@@ -176,4 +165,124 @@ def build_opro_prompt(
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
+    ]
+
+
+def get_analysis_prompt(features_desc, best_rows, rest_rows):
+    return [
+        {
+            "role": "system",
+            "content": f"You are a data scientist. Analyze the patterns in this dataset.\nFeatures:\n{features_desc}",
+        },
+        {
+            "role": "user",
+            "content": f"""Analyze the differences between these Best examples:\n{best_rows}\n\nAnd these Rest examples:\n{rest_rows}\n\n
+Output a structured analysis identifying:
+1. Feature Ranking: List 3-5 most influential features.
+2. Tradeoff Identification: Note any conflicting objectives.
+3. Directionality: For continuous variables, which direction improves the objective?
+""",
+        },
+    ]
+
+
+def get_constraint_prompt(analysis):
+    return [
+        {
+            "role": "user",
+            "content": f"""Based on this analysis:\n{analysis}\n\n
+Identify explicit boundaries for valid configurations. Distinguish between:
+- Hard Constraints: Inviolable rules (physical/logical limits).
+- Soft Constraints: Heuristic preferences.
+List them clearly.
+""",
+        }
+    ]
+
+
+def get_generation_prompt(analysis, constraints, best_rows, features_desc, n_count=2):
+    return [
+        {
+            "role": "user",
+            "content": f"""
+Analysis: {analysis}
+Constraints: {constraints}
+Configuration Features (generate values for ONLY these):
+{features_desc}
+
+Task: Generate {n_count} NEW better configurations and {n_count} NEW poorer configurations.
+Strictly adhere to the Hard Constraints.
+The "features" list in your output MUST include values for ONLY the configuration features listed above, in the same order. Do NOT include objective/output values.
+Optimize the key features identified in the Analysis to improve the Objectives.
+
+Return the output as a valid JSON object with keys "better_examples" and "poorer_examples", where each example has a "features" list.
+Do not wrap in markdown blocks. Just return the raw JSON string.
+Example format:
+{{
+  "better_examples": [{{"features": [0.1, 2, "A"]}}],
+  "poorer_examples": [{{"features": [0.9, 5, "B"]}}]
+}}
+""",
+        }
+    ]
+
+
+def get_validation_prompt(constraints, generated_examples):
+    return [
+        {
+            "role": "user",
+            "content": f"""
+Constraints:
+{constraints}
+
+Generated Configuration:
+{generated_examples}
+
+Task: Verify if the configuration violates any Hard Constraints.
+If VALID, output "VALID".
+If INVALID, explain the violation and provide a REVISED configuration that satisfies the constraint while preserving other values.
+
+Return JSON: {{"status": "VALID" | "INVALID", "revised_features": [...] (if invalid), "explanation": "..."}}
+""",
+        }
+    ]
+
+
+def bs_prompt(data, best, rest):
+    feature_names = [col.txt for col in data.cols.x]
+
+    def examples(rows):
+        return "\n".join(
+            "  - " + ", ".join(f"{k}={v}" for k, v in zip(feature_names, row)) for row in rows
+        )
+
+    best_examples_str = examples(best)
+    rest_examples_str = examples(rest)
+    return [
+        (
+            "system",
+            "You are a helpful AI that generates synthetic data examples for optimization.",
+        ),
+        (
+            "human",
+            f"""Dataset features: {", ".join(feature_names)}
+
+BEST examples (these have good performance):
+{best_examples_str}
+
+WORST examples (these have poor performance):
+{rest_examples_str}
+
+Generate 2 new examples that would be BETTER than the best examples, and 2 new examples that would be WORSE than the worst examples.
+
+Return your answer as a simple list in this exact format:
+BETTER:
+- feature1=value1, feature2=value2, ...
+- feature1=value1, feature2=value2, ...
+
+WORSE:
+- feature1=value1, feature2=value2, ...
+- feature1=value1, feature2=value2, ...
+        """,
+        ),
     ]
